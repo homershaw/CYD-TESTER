@@ -8,10 +8,11 @@ Cheap Yellow Display Modbus tester for the RIOT controller: a Modbus TCP server 
 |---|---|---|
 | 1 | Board bring-up: display, touch and calibration, RGB LED, BOOT button | Done, tested on hardware |
 | 2 | Wi-Fi station, setup AP, captive portal, mDNS, BOOT 3 s / 10 s | Done, tested on hardware |
-| 3 | Profile parser and native tests | Next |
-| 4-8 | Modbus server, simulation, web UI, faults/diagnostics, OTA/SD | Not started |
+| 3 | Profile parser, address map, codec, host tests | Done: 8/8 host tests, all reference profiles load |
+| 4 | Modbus TCP server with static values | Next |
+| 5-8 | Simulation, web UI, faults/diagnostics, OTA/SD | Not started |
 
-Sizes (env `cyd`): phase 1 used RAM 49.6 KB and flash 1.11 MB. Phase 2 uses RAM 53.7 KB of 320 KB and flash 1.24 MB of the 1600 KB app slot.
+Sizes (env `cyd`): phase 1 used flash 1.11 MB and phase 2 used 1.24 MB. Phase 3 uses RAM 53.7 KB of 320 KB and flash 1.27 MB of the 1600 KB app slot.
 
 ## Build and flash
 
@@ -20,8 +21,10 @@ pio run -e cyd -t upload        # board on COM14 (CH340)
 pio device monitor -e cyd
 ```
 
+- Host tests: `pio test -e native`. These need a host GCC, by default WinLibs at `C:\Users\scada\tools\winlibs-gcc-16.2.0` (set `CYD_HOST_GCC` to override). They parse every profile in `test/fixtures/` (copied from MutliFlowOTA/toml), and check the spec's address and codec vectors.
 - On first boot, LittleFS formats itself and touch calibration runs (tap three crosses). Hold the screen during power-up to recalibrate.
 - Calibration is stored in `/config/touch.toml`.
+- The built-in `test_bench` profile and sim are embedded in the firmware and written to `/profiles/` and `/sims/` only when missing, so a fresh unit works without a filesystem upload.
 
 ## Hardware notes
 
