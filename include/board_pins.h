@@ -26,6 +26,8 @@
 #define LOAD_FONT4 1
 #define LOAD_GFXFF 1
 #define SMOOTH_FONT 1
+// Touch uses XPT2046_Touchscreen on its own bus, so TFT_eSPI touch support (TOUCH_CS) stays off.
+#define DISABLE_ALL_LIBRARY_WARNINGS 1
 
 // ---- Touch: XPT2046 on its own SPI bus (VSPI) ----
 #define PIN_TOUCH_CLK 25

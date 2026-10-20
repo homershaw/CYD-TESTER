@@ -1,7 +1,9 @@
 // RIOT Modbus TCP Test Unit (CYD-TESTER)
-// Phase 2: Wi-Fi station, setup AP and captive portal, on top of the phase 1 board bring-up.
+// Phase 4: Modbus TCP server serving profile tags with static values,
+// on top of board bring-up (1), Wi-Fi and portal (2) and the profile parser (3).
 #include <Arduino.h>
 #include <LittleFS.h>
+#include "modbus/server.h"
 #include "net/wifi_manager.h"
 #include "profiles/profile_store.h"
 #include "profiles/unit_config.h"
@@ -13,14 +15,27 @@
 #include "web/web_server.h"
 
 #ifndef FW_VERSION
-#define FW_VERSION "0.3.0-phase3"
+#define FW_VERSION "0.4.0-phase4"
 #endif
 
 namespace {
 auto& tft = display::tft;
+store::Store values;
 constexpr int16_t ValueX = 74, RowY = 40, RowH = 20;
-constexpr int16_t ButtonX = 8, ButtonY = 192, ButtonW = 150, ButtonH = 40;
+constexpr int16_t ButtonX = 8, ButtonY = 198, ButtonW = 150, ButtonH = 36;
 bool apShown = false;
+
+void buildStore() {
+  for (const auto& d : profiles::devices()) {
+    if (d.status != profile::Status::Ok) continue;
+    values.devices.emplace_back(d.unitId, d.enabled, d.profile);
+    auto& dev = values.devices.back();
+    for (size_t i = 0; i < d.profile->tags.size(); ++i) {
+      const auto& tag = d.profile->tags[i];
+      dev.setValue(i, sim::startValue(tag, d.sim.find(tag.id)));
+    }
+  }
+}
 
 void header() {
   tft.fillRect(0, 0, SCREEN_W, 26, TFT_NAVY);
@@ -36,9 +51,9 @@ void drawLayout(bool ap) {
   header();
   tft.setTextDatum(ML_DATUM);
   tft.setTextColor(TFT_LIGHTGREY, TFT_BLACK);
-  const char* labels[] = {"Wi-Fi", "SSID", "IP", "RSSI", "Host", "Devices"};
-  for (int i = 0; i < 6; ++i) tft.drawString(labels[i], 8, RowY + i * RowH, 2);
-  tft.drawFastHLine(0, 151, SCREEN_W, TFT_DARKGREY);
+  const char* labels[] = {"Wi-Fi", "SSID", "IP", "RSSI", "Host", "Devices", "Modbus"};
+  for (int i = 0; i < 7; ++i) tft.drawString(labels[i], 8, RowY + i * RowH, 2);
+  tft.drawFastHLine(0, 172, SCREEN_W, TFT_DARKGREY);
   if (ap) {
     const String& name = wifimgr::unitName();
     const String& pw = unitcfg::current().apPassword;
@@ -59,8 +74,10 @@ void drawLayout(bool ap) {
 void drawValue(int row, const String& value, uint16_t color = TFT_WHITE) {
   tft.setTextDatum(ML_DATUM);
   tft.setTextColor(color, TFT_BLACK);
-  tft.setTextPadding(apShown ? 130 : 240);
-  tft.drawString(value, ValueX, RowY + row * RowH, 2);
+  // Rows beside the QR code stop short of it; rows below it use the full width.
+  const int16_t y = RowY + row * RowH;
+  tft.setTextPadding(apShown && y < 140 ? 132 : SCREEN_W - ValueX - 4);
+  tft.drawString(value, ValueX, y, 2);
   tft.setTextPadding(0);
 }
 
@@ -83,36 +100,60 @@ void refresh() {
   drawValue(2, connected ? wifimgr::stationIp().toString() : String("--"));
   drawValue(3, connected ? String(wifimgr::rssi()) + " dBm" : String("--"));
   drawValue(4, wifimgr::unitName() + ".local");
+
   const auto& devs = profiles::devices();
   size_t ok = 0;
   for (const auto& d : devs) ok += d.status == profile::Status::Ok;
   String devices = String(ok) + " of " + String(devs.size()) + " loaded";
   if (!devs.empty() && devs[0].status == profile::Status::Ok)
-    devices += ", unit " + String(devs[0].unitId) + " " + devs[0].profile.model.c_str();
+    devices += ", unit " + String(devs[0].unitId) + " " + devs[0].profile->model.c_str();
   drawValue(5, devices, ok == devs.size() ? TFT_WHITE : TFT_ORANGE);
 
+  const auto s = mbserver::stats();
+  const uint32_t age = s.requests ? millis() - s.lastRequestMs : UINT32_MAX;
+  String mb = "port " + String(unitcfg::current().modbus.port) + ", " + String(s.activeClients) + " client(s), " +
+              String(s.requests) + " req";
+  if (s.requests) mb += age < 5000 ? ", POLLED" : ", idle " + String(age / 1000) + " s";
+  drawValue(6, mb, age < 5000 ? TFT_GREEN : TFT_LIGHTGREY);
+
   if (button::held()) {
-    const uint32_t s = button::heldMs() / 1000;
-    drawLine(160, s >= 10 ? "Release: network settings reset" : s >= 3 ? "Setup AP on. Keep holding to " + String(10 - s) + " s for network reset"
-                                                                : "Setup AP in " + String(3 - s) + " s, network reset at 10 s",
-             s >= 10 ? TFT_RED : TFT_YELLOW);
+    const uint32_t sec = button::heldMs() / 1000;
+    drawLine(184, sec >= 10 ? "Release: network settings reset"
+                  : sec >= 3 ? "Setup AP on. Hold to 10 s to reset network"
+                             : "Setup AP in " + String(3 - sec) + " s, network reset at 10 s",
+             sec >= 10 ? TFT_RED : TFT_YELLOW);
   } else if (apShown) {
     const uint32_t off = wifimgr::apOffInS();
-    drawLine(160, "Join " + wifimgr::unitName() + ", open 192.168.4.1", TFT_CYAN);
-    drawLine(182, String(wifimgr::apClients()) + " phone(s) connected" + (off ? ", AP closes in " + String(off) + " s" : String()),
+    drawLine(184, "Join " + wifimgr::unitName() + ", open 192.168.4.1", TFT_CYAN);
+    drawLine(206, String(wifimgr::apClients()) + " phone(s) connected" + (off ? ", AP closes in " + String(off) + " s" : String()),
              TFT_LIGHTGREY);
+  } else if (s.requests) {
+    drawLine(184, "Last: unit " + String(s.lastUnit) + " FC" + String(s.lastFc) + " @" + String(s.lastAddress) +
+                      (s.lastException ? " -> exception " + String(s.lastException) : String(" OK")) + ", exc " +
+                      String(s.exceptions),
+             s.lastException ? TFT_ORANGE : TFT_LIGHTGREY);
   } else {
-    drawLine(160, connected ? "Web: http://" + wifimgr::stationIp().toString() + "/" : String("Hold BOOT 3 s for the setup AP"),
+    drawLine(184, connected ? "Modbus TCP " + wifimgr::stationIp().toString() + ":" + String(unitcfg::current().modbus.port)
+                            : String("Hold BOOT 3 s for the setup AP"),
              TFT_LIGHTGREY);
   }
-  drawLine(SCREEN_H - 10, "Heap " + String(ESP.getFreeHeap() / 1024) + " KB (min " + String(ESP.getMinFreeHeap() / 1024) + ")",
-           TFT_DARKGREY);
 }
 
 void ledPattern() {
   if (wifimgr::apActive()) led::setPattern(led::Pattern::BlueSolid);
   else if (wifimgr::state() == wifimgr::State::Connected) led::setPattern(led::Pattern::Off);
   else led::setPattern(led::Pattern::YellowSlowBlink);
+}
+
+// 30 ms flash per poll: green for a reply, red for an exception or a dropped reply.
+void ledPolls() {
+  static uint32_t lastReplies = 0, lastBad = 0;
+  const auto s = mbserver::stats();
+  const uint32_t bad = s.exceptions + s.dropped;
+  if (bad != lastBad) led::flash(led::Color::Red, 30);
+  else if (s.replies != lastReplies) led::flash(led::Color::Green, 30);
+  lastReplies = s.replies;
+  lastBad = bad;
 }
 }  // namespace
 
@@ -131,6 +172,7 @@ void setup() {
   for (const auto& w : warnings) Serial.printf("unit.toml: %s\n", w.c_str());
   profiles::installBuiltins();
   profiles::loadDevices();
+  buildStore();
 
   const auto& dc = unitcfg::current().display;
   display::begin(dc.rotation, dc.brightness);
@@ -141,6 +183,15 @@ void setup() {
 
   wifimgr::begin();
   web::begin();
+  const auto& mc = unitcfg::current().modbus;
+  mbproc::Settings settings;
+  settings.respondToAnyUnitId = mc.respondToAnyUnitId;
+  settings.unmappedReadZero = mc.unmappedReadZero;
+  settings.strictFunctionCodes = mc.strictFunctionCodes;
+  settings.firmwareVersion = FW_VERSION;
+  mbserver::begin(values, settings, mc.port, mc.maxClients, mc.idleTimeoutS);
+  Serial.printf("Modbus TCP server on port %u, %u device(s), max %u clients\n", mc.port, unsigned(values.devices.size()),
+                mc.maxClients);
   drawLayout(wifimgr::apActive());
 }
 
@@ -150,6 +201,7 @@ void loop() {
   button::service();
   wifimgr::service();
   ledPattern();
+  ledPolls();
   led::service();
 
   if (button::crossed(3000)) { Serial.println("BOOT 3 s: setup AP requested"); wifimgr::requestPortal(); }
@@ -168,8 +220,10 @@ void loop() {
   if (now - lastDraw >= 250) { lastDraw = now; refresh(); }
   if (now - lastLog >= 10000) {
     lastLog = now;
-    Serial.printf("wifi=%s ip=%s ap=%d heap=%u min=%u\n", wifimgr::stateText(), wifimgr::stationIp().toString().c_str(),
-                  wifimgr::apActive(), ESP.getFreeHeap(), ESP.getMinFreeHeap());
+    const auto s = mbserver::stats();
+    Serial.printf("wifi=%s ip=%s ap=%d modbus req=%u exc=%u clients=%u heap=%u min=%u\n", wifimgr::stateText(),
+                  wifimgr::stationIp().toString().c_str(), wifimgr::apActive(), s.requests, s.exceptions, s.activeClients,
+                  ESP.getFreeHeap(), ESP.getMinFreeHeap());
   }
   delay(5);
 }

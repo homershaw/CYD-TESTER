@@ -19,6 +19,15 @@ void writeIfMissing(const char* dir, const char* path, const char* text) {
   f.close();
   Serial.printf("Installed built-in %s\n", path);
 }
+
+bool readFile(const String& path, String& out) {
+  if (!LittleFS.exists(path)) return false;
+  File f = LittleFS.open(path, FILE_READ);
+  if (!f) return false;
+  out = f.readString();
+  f.close();
+  return true;
+}
 }  // namespace
 
 void installBuiltins() {
@@ -34,30 +43,52 @@ size_t loadDevices() {
     dev.unitId = d.unitId;
     dev.enabled = d.enabled;
     dev.file = d.profile;
-    const String path = "/profiles/" + d.profile;
-    File f = LittleFS.open(path, FILE_READ);
-    if (!f) {
-      dev.message = "profile file " + path + " not found";
-    } else {
-      String text = f.readString();
-      f.close();
-      const auto r = profile::parse(std::string_view(text.c_str(), text.length()), dev.profile);
-      dev.status = r.status;
-      dev.message = r.message.c_str();
-      if (r.status == profile::Status::Ok) ++ok;
+    String text;
+    if (!readFile("/profiles/" + d.profile, text)) {
+      dev.message = "profile file /profiles/" + d.profile + " not found";
+      loaded.push_back(std::move(dev));
+      continue;
+    }
+    const auto r = profile::parse(std::string_view(text.c_str(), text.length()), *dev.profile);
+    dev.status = r.status;
+    dev.message = r.message.c_str();
+    if (r.status == profile::Status::Ok) {
+      ++ok;
+      // The sidecar is optional: unit.toml names it, else <profile_id>.sim.toml is tried.
+      dev.simFile = d.sim.length() ? d.sim : String(dev.profile->profileId.c_str()) + ".sim.toml";
+      String simText;
+      if (readFile("/sims/" + dev.simFile, simText)) {
+        std::string error;
+        if (!sim::parse(std::string_view(simText.c_str(), simText.length()), *dev.profile, dev.sim, error))
+          dev.simMessage = error.c_str();
+#if !HAS_LDR
+        for (const auto& e : dev.sim.entries)
+          if (e.mode == sim::Mode::Ldr)
+            dev.sim.warnings.push_back("sim '" + e.tag + "': no light sensor on this board; the value stays static");
+#endif
+      } else if (d.sim.length()) {
+        dev.simMessage = "sim file /sims/" + dev.simFile + " not found";
+      } else {
+        dev.simFile = "";
+      }
     }
     loaded.push_back(std::move(dev));
   }
   for (const auto& d : loaded) {
-    if (d.status == profile::Status::Ok) {
-      Serial.printf("Unit %u: %s (%s %s) %u tags, %u mapped, address %s, %u warning(s)%s\n", d.unitId, d.file.c_str(),
-                    d.profile.vendor.c_str(), d.profile.model.c_str(), unsigned(d.profile.tags.size()),
-                    unsigned(d.profile.mappedCount()), profile::toString(d.profile.addressMode),
-                    unsigned(d.profile.warnings.size()), d.enabled ? "" : " [disabled]");
-      for (const auto& w : d.profile.warnings) Serial.printf("    - %s\n", w.c_str());
-    } else {
+    if (d.status != profile::Status::Ok) {
       Serial.printf("Unit %u: %s NOT loaded: %s\n", d.unitId, d.file.c_str(), d.message.c_str());
+      continue;
     }
+    const auto& p = *d.profile;
+    Serial.printf("Unit %u: %s (%s %s) %u tags, %u mapped, address %s, %u warning(s)%s\n", d.unitId, d.file.c_str(),
+                  p.vendor.c_str(), p.model.c_str(), unsigned(p.tags.size()), unsigned(p.mappedCount()),
+                  profile::toString(p.addressMode), unsigned(p.warnings.size()), d.enabled ? "" : " [disabled]");
+    for (const auto& w : p.warnings) Serial.printf("    - %s\n", w.c_str());
+    if (d.simMessage.length()) Serial.printf("    sim: %s\n", d.simMessage.c_str());
+    else if (d.simFile.length())
+      Serial.printf("    sim: %s, %u entries, %u warning(s)\n", d.simFile.c_str(), unsigned(d.sim.entries.size()),
+                    unsigned(d.sim.warnings.size()));
+    for (const auto& w : d.sim.warnings) Serial.printf("    - %s\n", w.c_str());
   }
   return ok;
 }
