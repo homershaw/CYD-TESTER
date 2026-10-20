@@ -3,6 +3,7 @@
 #include <Arduino.h>
 #include <LittleFS.h>
 #include "net/wifi_manager.h"
+#include "profiles/profile_store.h"
 #include "profiles/unit_config.h"
 #include "ui/button.h"
 #include "ui/display.h"
@@ -12,7 +13,7 @@
 #include "web/web_server.h"
 
 #ifndef FW_VERSION
-#define FW_VERSION "0.2.0-phase2"
+#define FW_VERSION "0.3.0-phase3"
 #endif
 
 namespace {
@@ -35,9 +36,9 @@ void drawLayout(bool ap) {
   header();
   tft.setTextDatum(ML_DATUM);
   tft.setTextColor(TFT_LIGHTGREY, TFT_BLACK);
-  const char* labels[] = {"Wi-Fi", "SSID", "IP", "RSSI", "Host"};
-  for (int i = 0; i < 5; ++i) tft.drawString(labels[i], 8, RowY + i * RowH, 2);
-  tft.drawFastHLine(0, 146, SCREEN_W, TFT_DARKGREY);
+  const char* labels[] = {"Wi-Fi", "SSID", "IP", "RSSI", "Host", "Devices"};
+  for (int i = 0; i < 6; ++i) tft.drawString(labels[i], 8, RowY + i * RowH, 2);
+  tft.drawFastHLine(0, 151, SCREEN_W, TFT_DARKGREY);
   if (ap) {
     const String& name = wifimgr::unitName();
     const String& pw = unitcfg::current().apPassword;
@@ -82,6 +83,13 @@ void refresh() {
   drawValue(2, connected ? wifimgr::stationIp().toString() : String("--"));
   drawValue(3, connected ? String(wifimgr::rssi()) + " dBm" : String("--"));
   drawValue(4, wifimgr::unitName() + ".local");
+  const auto& devs = profiles::devices();
+  size_t ok = 0;
+  for (const auto& d : devs) ok += d.status == profile::Status::Ok;
+  String devices = String(ok) + " of " + String(devs.size()) + " loaded";
+  if (!devs.empty() && devs[0].status == profile::Status::Ok)
+    devices += ", unit " + String(devs[0].unitId) + " " + devs[0].profile.model.c_str();
+  drawValue(5, devices, ok == devs.size() ? TFT_WHITE : TFT_ORANGE);
 
   if (button::held()) {
     const uint32_t s = button::heldMs() / 1000;
@@ -121,6 +129,8 @@ void setup() {
   std::vector<String> warnings;
   if (!unitcfg::load(error, warnings)) Serial.printf("unit.toml: %s (using defaults)\n", error.c_str());
   for (const auto& w : warnings) Serial.printf("unit.toml: %s\n", w.c_str());
+  profiles::installBuiltins();
+  profiles::loadDevices();
 
   const auto& dc = unitcfg::current().display;
   display::begin(dc.rotation, dc.brightness);
