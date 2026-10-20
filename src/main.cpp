@@ -1,137 +1,165 @@
 // RIOT Modbus TCP Test Unit (CYD-TESTER)
-// Phase 1: board bring-up - display, touch (with calibration), RGB LED, BOOT button, LDR.
+// Phase 2: Wi-Fi station, setup AP and captive portal, on top of the phase 1 board bring-up.
 #include <Arduino.h>
 #include <LittleFS.h>
-#include <WiFi.h>
+#include "net/wifi_manager.h"
+#include "profiles/unit_config.h"
 #include "ui/button.h"
 #include "ui/display.h"
 #include "ui/led.h"
+#include "ui/qr.h"
 #include "ui/touch.h"
+#include "web/web_server.h"
 
 #ifndef FW_VERSION
-#define FW_VERSION "0.1.0-phase1"
+#define FW_VERSION "0.2.0-phase2"
 #endif
 
 namespace {
-String unitName;  // riot-XXXX, from the last 4 hex digits of the station MAC
+auto& tft = display::tft;
+constexpr int16_t ValueX = 74, RowY = 40, RowH = 20;
+constexpr int16_t ButtonX = 8, ButtonY = 192, ButtonW = 150, ButtonH = 40;
+bool apShown = false;
 
-String makeUnitName() {
-  uint8_t mac[6];
-  WiFi.macAddress(mac);
-  char name[12];
-  snprintf(name, sizeof name, "riot-%02X%02X", mac[4], mac[5]);
-  return name;
-}
-
-void drawStatic() {
-  auto& tft = display::tft;
-  tft.fillScreen(TFT_BLACK);
+void header() {
   tft.fillRect(0, 0, SCREEN_W, 26, TFT_NAVY);
   tft.setTextDatum(ML_DATUM);
   tft.setTextColor(TFT_WHITE, TFT_NAVY);
-  tft.drawString("CYD-TESTER  bring-up", 6, 13, 2);
+  tft.drawString("CYD-TESTER", 6, 13, 2);
   tft.setTextDatum(MR_DATUM);
   tft.drawString(FW_VERSION, SCREEN_W - 6, 13, 2);
+}
+
+void drawLayout(bool ap) {
+  tft.fillScreen(TFT_BLACK);
+  header();
   tft.setTextDatum(ML_DATUM);
   tft.setTextColor(TFT_LIGHTGREY, TFT_BLACK);
-  const char* labels[] = {"Unit", "Light (LDR)", "BOOT button", "Touch", "Free heap"};
-  for (int i = 0; i < 5; ++i) tft.drawString(labels[i], 8, 44 + i * 22, 2);
-  tft.drawFastHLine(0, 156, SCREEN_W, TFT_DARKGREY);
-  tft.setTextColor(TFT_DARKGREY, TFT_BLACK);
-  tft.drawString("Draw here to test touch", 8, 168, 2);
+  const char* labels[] = {"Wi-Fi", "SSID", "IP", "RSSI", "Host"};
+  for (int i = 0; i < 5; ++i) tft.drawString(labels[i], 8, RowY + i * RowH, 2);
+  tft.drawFastHLine(0, 146, SCREEN_W, TFT_DARKGREY);
+  if (ap) {
+    const String& name = wifimgr::unitName();
+    const String& pw = unitcfg::current().apPassword;
+    const String payload = pw.length() ? "WIFI:T:WPA;S:" + name + ";P:" + pw + ";;" : "WIFI:T:nopass;S:" + name + ";;";
+    qr::draw(tft, payload.c_str(), 214, 30, 100);
+    tft.setTextDatum(MC_DATUM);
+    tft.setTextColor(TFT_CYAN, TFT_BLACK);
+    tft.drawString(name, 264, 136, 2);
+  } else {
+    tft.fillRoundRect(ButtonX, ButtonY, ButtonW, ButtonH, 6, TFT_DARKCYAN);
+    tft.setTextDatum(MC_DATUM);
+    tft.setTextColor(TFT_WHITE, TFT_DARKCYAN);
+    tft.drawString("Setup AP", ButtonX + ButtonW / 2, ButtonY + ButtonH / 2, 2);
+  }
+  apShown = ap;
 }
 
 void drawValue(int row, const String& value, uint16_t color = TFT_WHITE) {
-  auto& tft = display::tft;
   tft.setTextDatum(ML_DATUM);
   tft.setTextColor(color, TFT_BLACK);
-  tft.setTextPadding(200);
-  tft.drawString(value, 116, 44 + row * 22, 2);
+  tft.setTextPadding(apShown ? 130 : 240);
+  tft.drawString(value, ValueX, RowY + row * RowH, 2);
   tft.setTextPadding(0);
 }
 
-void ledSelfTest() {
-  for (auto c : {led::Color::Red, led::Color::Green, led::Color::Blue}) {
-    led::flash(c, 250);
-    const uint32_t until = millis() + 300;
-    while (int32_t(until - millis()) > 0) { led::service(); delay(10); }
+void drawLine(int16_t y, const String& value, uint16_t color) {
+  tft.setTextDatum(ML_DATUM);
+  tft.setTextColor(color, TFT_BLACK);
+  tft.setTextPadding(SCREEN_W - 16);
+  tft.drawString(value, 8, y, 2);
+  tft.setTextPadding(0);
+}
+
+void refresh() {
+  const auto st = wifimgr::state();
+  const bool connected = st == wifimgr::State::Connected;
+  const uint16_t stateColor = connected ? TFT_GREEN : st == wifimgr::State::Connecting ? TFT_YELLOW : TFT_ORANGE;
+  String state = wifimgr::stateText();
+  if (!connected && wifimgr::lastFailure().length()) state += ": " + wifimgr::lastFailure();
+  drawValue(0, state, stateColor);
+  drawValue(1, wifimgr::savedWifi().ssid);
+  drawValue(2, connected ? wifimgr::stationIp().toString() : String("--"));
+  drawValue(3, connected ? String(wifimgr::rssi()) + " dBm" : String("--"));
+  drawValue(4, wifimgr::unitName() + ".local");
+
+  if (button::held()) {
+    const uint32_t s = button::heldMs() / 1000;
+    drawLine(160, s >= 10 ? "Release: network settings reset" : s >= 3 ? "Setup AP on. Keep holding to " + String(10 - s) + " s for network reset"
+                                                                : "Setup AP in " + String(3 - s) + " s, network reset at 10 s",
+             s >= 10 ? TFT_RED : TFT_YELLOW);
+  } else if (apShown) {
+    const uint32_t off = wifimgr::apOffInS();
+    drawLine(160, "Join " + wifimgr::unitName() + ", open 192.168.4.1", TFT_CYAN);
+    drawLine(182, String(wifimgr::apClients()) + " phone(s) connected" + (off ? ", AP closes in " + String(off) + " s" : String()),
+             TFT_LIGHTGREY);
+  } else {
+    drawLine(160, connected ? "Web: http://" + wifimgr::stationIp().toString() + "/" : String("Hold BOOT 3 s for the setup AP"),
+             TFT_LIGHTGREY);
   }
+  drawLine(SCREEN_H - 10, "Heap " + String(ESP.getFreeHeap() / 1024) + " KB (min " + String(ESP.getMinFreeHeap() / 1024) + ")",
+           TFT_DARKGREY);
+}
+
+void ledPattern() {
+  if (wifimgr::apActive()) led::setPattern(led::Pattern::BlueSolid);
+  else if (wifimgr::state() == wifimgr::State::Connected) led::setPattern(led::Pattern::Off);
+  else led::setPattern(led::Pattern::YellowSlowBlink);
 }
 }  // namespace
 
 void setup() {
   Serial.begin(115200);
   delay(50);
-  WiFi.mode(WIFI_STA);  // needed for the station MAC; no connection yet in phase 1
-  unitName = makeUnitName();
-  Serial.printf("\nCYD-TESTER %s  unit=%s\n", FW_VERSION, unitName.c_str());
-
+  Serial.printf("\nCYD-TESTER %s\n", FW_VERSION);
   led::begin();
   button::begin();
-  pinMode(PIN_LDR, INPUT);
-  analogSetPinAttenuation(PIN_LDR, ADC_11db);
 
-  // The data partition is ours alone, so formatting an unformatted one on first boot is safe.
-  const bool fsOk = LittleFS.begin(true);
-  Serial.printf("LittleFS %s total=%u used=%u\n", fsOk ? "mounted" : "FAILED",
-                LittleFS.totalBytes(), LittleFS.usedBytes());
+  const bool fsOk = LittleFS.begin(true);  // the data partition is ours alone
+  Serial.printf("LittleFS %s total=%u used=%u\n", fsOk ? "mounted" : "FAILED", LittleFS.totalBytes(), LittleFS.usedBytes());
+  String error;
+  std::vector<String> warnings;
+  if (!unitcfg::load(error, warnings)) Serial.printf("unit.toml: %s (using defaults)\n", error.c_str());
+  for (const auto& w : warnings) Serial.printf("unit.toml: %s\n", w.c_str());
 
-  display::begin(1, 80);
+  const auto& dc = unitcfg::current().display;
+  display::begin(dc.rotation, dc.brightness);
   touch::begin();
   delay(100);
   const bool forceCal = touch::touchedNow();  // screen held during power-up
-  if (forceCal || !touch::loadCalibration()) {
-    Serial.println(forceCal ? "Touch held at power-up: recalibrating" : "No touch calibration: calibrating");
-    touch::runCalibration();
-  } else {
-    const auto& c = touch::calibration();
-    Serial.printf("Touch calibration loaded: swap=%d x=%d..%d y=%d..%d\n", c.swapXY, c.xRawAt0, c.xRawAtMax,
-                  c.yRawAt0, c.yRawAtMax);
-  }
+  if (forceCal || !touch::loadCalibration()) touch::runCalibration();
 
-  drawStatic();
-  drawValue(0, unitName + (fsOk ? "   FS ok" : "   FS FAILED"), fsOk ? TFT_WHITE : TFT_RED);
-  ledSelfTest();
-  led::setPattern(led::Pattern::YellowSlowBlink);  // no Wi-Fi yet
+  wifimgr::begin();
+  web::begin();
+  drawLayout(wifimgr::apActive());
 }
 
 void loop() {
   static uint32_t lastDraw = 0, lastLog = 0;
-  static touch::Point last;
+  static bool wasPressed = false;
   button::service();
+  wifimgr::service();
+  ledPattern();
   led::service();
 
+  if (button::crossed(3000)) { Serial.println("BOOT 3 s: setup AP requested"); wifimgr::requestPortal(); }
+  if (button::crossed(10000)) { Serial.println("BOOT 10 s: network reset"); wifimgr::resetNetwork(); }
+
   const touch::Point p = touch::read();
-  if (p.pressed) {
-    display::tft.fillCircle(p.x, p.y, 2, TFT_CYAN);
-    if (!last.pressed) led::flash(led::Color::Green, 30);
+  if (p.pressed && !wasPressed && !apShown && p.x >= ButtonX && p.x < ButtonX + ButtonW && p.y >= ButtonY &&
+      p.y < ButtonY + ButtonH) {
+    led::flash(led::Color::Blue, 60);
+    wifimgr::requestPortal();
   }
-  last = p;
+  wasPressed = p.pressed;
 
-  if (button::crossed(3000)) { led::flash(led::Color::Blue, 400); Serial.println("BOOT held 3 s (setup AP in phase 2)"); }
-  if (button::crossed(10000)) { led::flash(led::Color::Red, 600); Serial.println("BOOT held 10 s (network reset in phase 2)"); }
-
+  if (wifimgr::apActive() != apShown) drawLayout(wifimgr::apActive());
   const uint32_t now = millis();
-  if (now - lastDraw >= 200) {
-    lastDraw = now;
-#if HAS_LDR
-    drawValue(1, String(analogRead(PIN_LDR)) + " / 4095");
-#else
-    drawValue(1, "not fitted on this board", TFT_DARKGREY);
-#endif
-    if (button::held()) {
-      const uint32_t s = button::heldMs() / 1000;
-      const String hint = s >= 10 ? "release: network reset" : s >= 3 ? "setup AP (reset at 10 s)" : "AP in " + String(3 - s) + " s";
-      drawValue(2, "HELD " + String(s) + " s  " + hint, s >= 10 ? TFT_RED : s >= 3 ? TFT_YELLOW : TFT_WHITE);
-    } else {
-      drawValue(2, "released");
-    }
-    drawValue(3, p.pressed ? "x=" + String(p.x) + "  y=" + String(p.y) : String("--"));
-    drawValue(4, String(ESP.getFreeHeap()) + " B  (min " + String(ESP.getMinFreeHeap()) + ")");
-  }
-  if (now - lastLog >= 5000) {
+  if (now - lastDraw >= 250) { lastDraw = now; refresh(); }
+  if (now - lastLog >= 10000) {
     lastLog = now;
-    Serial.printf("heap=%u min=%u\n", ESP.getFreeHeap(), ESP.getMinFreeHeap());
+    Serial.printf("wifi=%s ip=%s ap=%d heap=%u min=%u\n", wifimgr::stateText(), wifimgr::stationIp().toString().c_str(),
+                  wifimgr::apActive(), ESP.getFreeHeap(), ESP.getMinFreeHeap());
   }
   delay(5);
 }

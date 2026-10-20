@@ -7,10 +7,11 @@ Cheap Yellow Display Modbus tester for the RIOT controller: a Modbus TCP server 
 | Phase | Scope | State |
 |---|---|---|
 | 1 | Board bring-up: display, touch and calibration, RGB LED, BOOT button | Done, tested on hardware |
-| 2 | Wi-Fi station and captive portal | Next |
-| 3-8 | Profile parser, Modbus server, simulation, web UI, faults/diagnostics, OTA/SD | Not started |
+| 2 | Wi-Fi station, setup AP, captive portal, mDNS, BOOT 3 s / 10 s | Done, tested on hardware |
+| 3 | Profile parser and native tests | Next |
+| 4-8 | Modbus server, simulation, web UI, faults/diagnostics, OTA/SD | Not started |
 
-Phase 1 sizes (env `cyd`): RAM about 49.6 KB of 320 KB, flash about 1.11 MB of a 1600 KB app slot.
+Sizes (env `cyd`): phase 1 used RAM 49.6 KB and flash 1.11 MB. Phase 2 uses RAM 53.7 KB of 320 KB and flash 1.24 MB of the 1600 KB app slot.
 
 ## Build and flash
 
@@ -36,3 +37,6 @@ Each item is to be confirmed with the user (see PROMPT.md §14).
 - Profiles that state no address basis use the register number unchanged on the wire, and are flagged "address basis not stated".
 - The first test unit has no light sensor fitted (`HAS_LDR 0`). The `ldr` simulation mode falls back to a static value with a warning. Set `HAS_LDR 1` on boards that have one.
 - Arduino core 2.0.14 (espressif32 6.5.0) is used, because TFT_eSPI is not reliable on core 3.x.
+- The portal's "Save & connect" tries the new network before saving it. A failed attempt reports the reason and keeps the previous settings.
+- A setup AP opened from the BOOT button or touch while the station is connected stays up while a phone is connected, and closes after 10 idle minutes. After a successful portal setup the AP always closes after 60 s, as the spec says.
+- Station retries pause while a phone is connected to the setup AP, because retries change channel and would drop the phone.
