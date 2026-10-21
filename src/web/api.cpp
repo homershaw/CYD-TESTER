@@ -1,4 +1,5 @@
 #include "api.h"
+#include "version.h"
 #include <algorithm>
 #include <cmath>
 #include <LittleFS.h>
@@ -9,9 +10,6 @@
 #include "../profiles/unit_config.h"
 #include "web_server.h"
 
-#ifndef FW_VERSION
-#define FW_VERSION "dev"
-#endif
 
 namespace api {
 namespace {

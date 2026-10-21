@@ -2,6 +2,7 @@
 #include <DNSServer.h>
 #include <WiFi.h>
 #include "../web/web_server.h"
+#include "../web/www_assets.h"
 #include "wifi_manager.h"
 
 namespace portal {
@@ -140,11 +141,7 @@ void registerRoutes(AsyncWebServer& server) {
   }
   server.on("/", HTTP_GET, [](AsyncWebServerRequest* r) {
     if (viaAp(r)) { sendPortal(r); return; }
-    // Station side until the web UI arrives in phase 6.
-    r->send(200, "text/html",
-            "<!doctype html><meta name=viewport content='width=device-width'><body style='font:16px system-ui;padding:16px'>"
-            "<h2>" + wifimgr::unitName() + "</h2><p>RIOT Modbus test unit. The web UI arrives in a later build.</p>"
-            "<p><a href='/portal'>Wi-Fi setup</a></p></body>");
+    www::sendIndex(r);  // station side: the web UI
   });
   server.onNotFound([](AsyncWebServerRequest* r) {
     if (viaAp(r)) r->redirect(PortalUrl);  // any unknown host or path on the AP lands on the portal

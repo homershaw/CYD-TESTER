@@ -11,10 +11,41 @@ Cheap Yellow Display Modbus tester for the RIOT controller: a Modbus TCP server 
 | 3 | Profile parser, address map, codec, host tests | Done: 8/8 host tests, all reference profiles load |
 | 4 | Modbus TCP server with static values | Done: 19/19 host tests, live checks over Wi-Fi |
 | 5 | Simulation engine, sim TOML writer, template generator | Done: 25/25 host tests, waveforms verified over Modbus |
-| 6 | Web UI and REST API | Next |
-| 7-8 | Faults/diagnostics, OTA/SD | Not started |
+| 6 | Web UI, REST API, WebSocket | Done: API and WebSocket checks pass, UI checked in Edge |
+| 7 | Fault injection and diagnostics | Next |
 
-Sizes (env `cyd`): flash was 1.11 MB after phase 1, 1.24 MB after phase 2, 1.27 MB after phase 3 and 1.29 MB after phase 4. Phase 5 uses RAM 54.0 KB of 320 KB and flash 1.30 MB of the 1600 KB app slot.
+Scope set by the user (2026-10-20):
+- The unit only needs to serve Modbus responses.
+- Not built: SD card traffic logging, OTA firmware updates, HTTPS "Fetch from URL". Profiles are uploaded through the web UI instead.
+
+Sizes (env `cyd`): flash was 1.11 MB after phase 1, 1.24 MB after phase 2, 1.27 MB after phase 3, 1.29 MB after phase 4 and 1.30 MB after phase 5. Phase 6 uses RAM 54.3 KB of 320 KB and flash 1.39 MB of the 1600 KB app slot. The web UI is 7.5 KB gzipped.
+
+## Web UI
+
+Open `http://<unit IP>/` or `http://riot-XXXX.local/`. The setup AP side of `/` is the Wi-Fi portal.
+
+- **Dashboard:** Wi-Fi, Modbus counters by function code and exception code, last request, and a "POLLED" indicator for the last 5 s.
+- **Registers:** a live table per unit (WebSocket).
+  - Tap a value to override it, or tap a bool to toggle it. Resume puts a tag (or every tag) back on the simulation.
+  - Rows flash when a client reads them. Reads and the measured poll interval show which tags the RIOT actually polls.
+- **Devices:** the running device map, and the saved map (applies after Reboot).
+- **Profiles:**
+  - Upload `.toml` with validation (warnings plus the ref -> wire table).
+  - Stored byte-for-byte. Driver profiles such as `riot_m31.toml` are refused.
+  - Validate, download, and delete (refused while a device uses the profile).
+- **Simulation:** edit the sidecar, Generate template (placeholder ranges marked), and Save to apply live without a reboot.
+- **Settings:** `unit.toml` editor with import, export, save and reboot, plus a link to Wi-Fi setup.
+
+REST API (JSON; config and sims are TOML):
+- `GET /api/status`
+- `GET`/`POST /api/devices`
+- `GET`/`POST /api/profiles`; `GET`/`DELETE /api/profiles/<file>`; `GET /api/profiles/<file>/validate`
+- `GET`/`POST /api/values/<unit>`; `POST /api/values/<unit>/resume`
+- `GET`/`PUT /api/sim/<unit>`; `GET /api/sim/<unit>/template`
+- `GET`/`PUT /api/config`; `POST /api/reboot`
+- WebSocket `/ws`: status and values at 2 Hz.
+
+State-changing calls need HTTP Basic auth (user `admin`) when `admin_password` is set.
 
 ## Build and flash
 

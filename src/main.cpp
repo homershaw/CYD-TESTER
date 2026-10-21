@@ -1,6 +1,7 @@
 // RIOT Modbus TCP Test Unit (CYD-TESTER)
 // Board bring-up, Wi-Fi and portal, profiles, Modbus TCP server, simulation and web API.
 #include <Arduino.h>
+#include "version.h"
 #include <LittleFS.h>
 #include "app/runtime.h"
 #include "modbus/server.h"
@@ -15,9 +16,6 @@
 #include "web/api.h"
 #include "web/web_server.h"
 
-#ifndef FW_VERSION
-#define FW_VERSION "0.6.0-phase6"
-#endif
 
 namespace {
 auto& tft = display::tft;
