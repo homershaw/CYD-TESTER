@@ -6,6 +6,7 @@
 #include "modbus/server.h"
 #include "net/wifi_manager.h"
 #include "profiles/profile_store.h"
+#include "profiles/sim_engine.h"
 #include "profiles/unit_config.h"
 #include "ui/button.h"
 #include "ui/display.h"
@@ -15,12 +16,13 @@
 #include "web/web_server.h"
 
 #ifndef FW_VERSION
-#define FW_VERSION "0.4.0-phase4"
+#define FW_VERSION "0.5.0-phase5"
 #endif
 
 namespace {
 auto& tft = display::tft;
 store::Store values;
+simeng::Engine simulation(values);
 constexpr int16_t ValueX = 74, RowY = 40, RowH = 20;
 constexpr int16_t ButtonX = 8, ButtonY = 198, ButtonW = 150, ButtonH = 36;
 bool apShown = false;
@@ -34,7 +36,11 @@ void buildStore() {
       const auto& tag = d.profile->tags[i];
       dev.setValue(i, sim::startValue(tag, d.sim.find(tag.id)));
     }
+    simulation.configure(values.devices.size() - 1, d.sim, millis());
   }
+#if HAS_LDR
+  simulation.ldr = [] { return double(analogRead(PIN_LDR)); };
+#endif
 }
 
 void header() {
@@ -200,6 +206,7 @@ void loop() {
   static bool wasPressed = false;
   button::service();
   wifimgr::service();
+  simulation.tick(millis());
   ledPattern();
   ledPolls();
   led::service();

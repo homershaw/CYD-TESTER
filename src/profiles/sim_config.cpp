@@ -1,5 +1,6 @@
 #include "sim_config.h"
 #include <algorithm>
+#include <cstdio>
 #include <toml++/toml.hpp>
 
 namespace sim {
@@ -104,6 +105,71 @@ bool parse(std::string_view text, const profile::Profile& p, Config& out, std::s
     out.entries.push_back(e);
   }
   return true;
+}
+
+namespace {
+std::string quote(const std::string& s) {
+  std::string q = "\"";
+  for (char c : s) {
+    if (c == '"' || c == '\\') { q += '\\'; q += c; }
+    else if (c == '\n') q += "\\n";
+    else if (static_cast<unsigned char>(c) < 0x20) { char b[8]; std::snprintf(b, sizeof b, "\\u%04x", c); q += b; }
+    else q += c;
+  }
+  return q + "\"";
+}
+
+std::string num(double v) {
+  char b[32];
+  std::snprintf(b, sizeof b, "%.9g", v);
+  std::string s = b;
+  if (s.find_first_of(".eEn") == std::string::npos) s += ".0";  // keep it a TOML float
+  return s;
+}
+
+// An unscaled integer with no units holds a code or setting, not a measurement.
+bool looksLikeCode(const profile::Tag& t) {
+  return t.type != profile::DataType::Float32 && t.units.empty() && t.scale == 1.0f;
+}
+}  // namespace
+
+std::string toToml(const Config& c) {
+  std::string o = "schema_version = 1\nprofile_id = " + quote(c.profileId) + "\n";
+  for (const auto& e : c.entries) {
+    o += "\n[[sim]]\ntag = " + quote(e.tag) + "\nmode = " + quote(toString(e.mode)) + "\n";
+    if (!std::isnan(e.initial)) o += "initial = " + num(e.initial) + "\n";
+    if (!std::isnan(e.min)) o += "min = " + num(e.min) + "\n";
+    if (!std::isnan(e.max)) o += "max = " + num(e.max) + "\n";
+    if (e.mode != Mode::Static && e.mode != Mode::Echo && e.mode != Mode::Counter && e.mode != Mode::Random && e.mode != Mode::Ldr)
+      o += "period_s = " + num(e.periodS) + "\n";
+    if (e.noise > 0) o += "noise = " + num(e.noise) + "\n";
+    if (e.mode != Mode::Echo) o += "update_ms = " + std::to_string(e.updateMs) + "\n";
+  }
+  return o;
+}
+
+std::string templateToml(const profile::Profile& p) {
+  std::string o = "# Simulation sidecar for " + p.profileId + " (" + p.vendor + " " + p.model + ")\n";
+  o += "# Generated template. Values are in ENGINEERING units; the unit applies scale and encoding.\n";
+  o += "# Ranges marked PLACEHOLDER are not in the profile: replace them with realistic limits.\n";
+  o += "schema_version = 1\nprofile_id = " + quote(p.profileId) + "\n";
+  for (const auto& t : p.tags) {
+    if (!t.mapped) continue;
+    o += "\n[[sim]]\n";
+    if (!t.name.empty() && t.name != t.id) o += "# " + t.name + (t.units.empty() ? "" : " [" + t.units + "]") + "\n";
+    o += "tag = " + quote(t.id) + "\n";
+    if (t.writable) {
+      o += "mode = \"echo\"        # setpoint: changes only when the RIOT writes it\ninitial = 0\n";
+    } else if (t.type == profile::DataType::Bool) {
+      o += "mode = \"static\"\ninitial = 0\nupdate_ms = 1000\n";
+    } else if (looksLikeCode(t)) {
+      o += "mode = \"static\"      # code / configuration register\ninitial = 0\nupdate_ms = 1000\n";
+    } else {
+      o += "mode = \"sine\"\nmin = 0.0           # PLACEHOLDER range" + (t.units.empty() ? std::string() : " in " + t.units) +
+           "\nmax = 100.0         # PLACEHOLDER\nperiod_s = 60\nupdate_ms = 1000\n";
+    }
+  }
+  return o;
 }
 
 double startValue(const profile::Tag& t, const Entry* e) {

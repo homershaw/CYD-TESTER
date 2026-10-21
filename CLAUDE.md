@@ -8,7 +8,7 @@ Modbus TCP test unit for the RIOT controller, running on an ESP32-2432S028R "Che
 - Env `cyd`: espressif32 6.5.0 (Arduino core 2.0.14; TFT_eSPI is reliable on core 2.x). The board is on COM14 (CH340). `pio run -e cyd -t upload` works here.
 - All pins are in `include/board_pins.h`, which `build_flags` force-includes so TFT_eSPI is configured without editing the library.
 - toml++ v3.4.0 is vendored in `lib/tomlplusplus` because it isn't in the PlatformIO registry. XPT2046_Touchscreen is pinned to the GitHub tag v1.4.
-- 4 MB flash, no PSRAM. App slots are 1600 KB each (`partitions.csv`), and phase 4 uses about 79% of one, so report flash use after each phase. The Modbus server is our own AsyncTCP code (see README Assumptions), not eModbus.
+- 4 MB flash, no PSRAM. App slots are 1600 KB each (`partitions.csv`), and phase 5 uses about 80% of one, so report flash use after each phase. The Modbus server is our own AsyncTCP code (see README Assumptions), not eModbus.
 
 ## Shared PlatformIO install
 

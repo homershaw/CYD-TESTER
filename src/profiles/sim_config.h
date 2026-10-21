@@ -32,4 +32,11 @@ const char* toString(Mode m);
 bool parse(std::string_view text, const profile::Profile& p, Config& out, std::string& error);
 // Starting value: `initial`, else the middle of min/max, else 0 (bools: 0/1).
 double startValue(const profile::Tag& t, const Entry* e);
+
+// Clean TOML for a sim config (the web UI's Save button).
+std::string toToml(const Config& c);
+// "Generate sim template": an entry for every mapped tag. Writable tags echo,
+// bits and code/config registers stay static, and measurements get a sine over a
+// placeholder range that is clearly marked for the user to replace.
+std::string templateToml(const profile::Profile& p);
 }  // namespace sim

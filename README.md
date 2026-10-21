@@ -10,10 +10,11 @@ Cheap Yellow Display Modbus tester for the RIOT controller: a Modbus TCP server 
 | 2 | Wi-Fi station, setup AP, captive portal, mDNS, BOOT 3 s / 10 s | Done, tested on hardware |
 | 3 | Profile parser, address map, codec, host tests | Done: 8/8 host tests, all reference profiles load |
 | 4 | Modbus TCP server with static values | Done: 19/19 host tests, live checks over Wi-Fi |
-| 5 | Simulation engine | Next |
-| 6-8 | Web UI, faults/diagnostics, OTA/SD | Not started |
+| 5 | Simulation engine, sim TOML writer, template generator | Done: 25/25 host tests, waveforms verified over Modbus |
+| 6 | Web UI and REST API | Next |
+| 7-8 | Faults/diagnostics, OTA/SD | Not started |
 
-Sizes (env `cyd`): flash was 1.11 MB after phase 1, 1.24 MB after phase 2 and 1.27 MB after phase 3. Phase 4 uses RAM 54.0 KB of 320 KB and flash 1.29 MB of the 1600 KB app slot.
+Sizes (env `cyd`): flash was 1.11 MB after phase 1, 1.24 MB after phase 2, 1.27 MB after phase 3 and 1.29 MB after phase 4. Phase 5 uses RAM 54.0 KB of 320 KB and flash 1.30 MB of the 1600 KB app slot.
 
 ## Build and flash
 
@@ -41,6 +42,16 @@ Each item is to be confirmed with the user (see PROMPT.md §14), except where ma
 - A `read_write` tag with no `write_function` accepts any suitable write function code, even with `strict_function_codes = true`. Strict mode only enforces a declared `write_function`.
 - A broadcast write (unit ID 0) is applied to every enabled device, and never answered.
 - Each tag starts at its sim `initial` value, or else the middle of `min`/`max`, or else 0.
+- Sim modes where the spec leaves details open:
+  - `step` climbs from `min` to `max` in 5 equal steps per `period_s`, then restarts.
+  - `toggle` is on (`max`, or 1) for the first half of `period_s` and off (`min`, or 0) for the second.
+  - `ramp` is a sawtooth from `min` to `max`.
+  - `counter` adds 1 per update from `initial` (or `min`), wrapping to `min` after `max`.
+  - `noise` is clamped to `min`/`max` for every mode except `static`.
+- "Generate sim template" settings:
+  - Writable tags use `echo`.
+  - Bits and unscaled integers without units (codes and settings) use `static`.
+  - Other measurements use `sine` over a 0-100 range marked `# PLACEHOLDER`, to be replaced with real limits.
 - `modbus-test` / `riotwifi` are the default station credentials (the network the unit joins). The `riot-XXXX` setup AP is open.
 - Profiles that state no address basis use the register number unchanged on the wire, and are flagged "address basis not stated".
 - The first test unit has no light sensor fitted (`HAS_LDR 0`). The `ldr` simulation mode falls back to a static value with a warning. Set `HAS_LDR 1` on boards that have one.
