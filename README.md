@@ -26,7 +26,13 @@ pio device monitor -e cyd
 - Host tests: `pio test -e native`. These need a host GCC, by default WinLibs at `C:\Users\scada\tools\winlibs-gcc-16.2.0` (set `CYD_HOST_GCC` to override). They parse every profile in `test/fixtures/` (copied from MutliFlowOTA/toml), check the spec's address and codec vectors, and exercise every Modbus function code and write rule.
 - On first boot, LittleFS formats itself and touch calibration runs (tap three crosses). Hold the screen during power-up to recalibrate.
 - Calibration is stored in `/config/touch.toml`.
-- The built-in `test_bench` profile and sim are embedded in the firmware and written to `/profiles/` and `/sims/` only when missing, so a fresh unit works without a filesystem upload.
+- The built-in `test_bench` and `riot_m31_emulation` profiles and sims are embedded in the firmware and written to `/profiles/` and `/sims/` only when missing, so a fresh unit works without a filesystem upload.
+- Default device map: unit 1 = `test_bench`, unit 2 = `riot_m31_emulation`.
+- `riot_m31_emulation` answers like a RIOT M31 I/O rack:
+  - DI1-4 on FC2 and DO1-4 on FC1 (written with FC15), at wire 0-3.
+  - AI1-4 on FC4 and AO1-4 on FC3 (written with FC6), at wire 0-3, as uint16 microamps.
+  - Point a RIOT "M31 Rack" at this unit's IP and the matching unit ID.
+- `GET /api/config` downloads `unit.toml` with passwords shown as `********`. `PUT /api/config` uploads it (validated; a `********` keeps the saved password). `POST /api/reboot` applies it. If `admin_password` is set, both write endpoints need HTTP Basic auth (user `admin`).
 
 ## Hardware notes
 
@@ -59,3 +65,4 @@ Each item is to be confirmed with the user (see PROMPT.md §14), except where ma
 - The portal's "Save & connect" tries the new network before saving it. A failed attempt reports the reason and keeps the previous settings.
 - A setup AP opened from the BOOT button or touch while the station is connected stays up while a phone is connected, and closes after 10 idle minutes. After a successful portal setup the AP always closes after 60 s, as the spec says.
 - Station retries pause while a phone is connected to the setup AP, because retries change channel and would drop the phone.
+- Wi-Fi modem-sleep is off. The RIOT opens a new TCP connection for every poll with a 200 ms connect timeout. With power saving on, the ESP32's connection reply can take 100-300 ms, and polls fail as `CONNECT_FAIL`.

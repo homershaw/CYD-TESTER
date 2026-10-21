@@ -215,8 +215,24 @@ colour = "red"
   TEST_ASSERT_EQUAL(int(Status::NotModbus), int(parse("schema_version = 2\n[device]\nprofile_id = \"x\"\n", p).status));
 }
 
+void test_m31_emulation_profile() {
+  Profile p;
+  const auto r = parse(readFile("data/profiles/riot_m31_emulation.toml"), p);
+  TEST_ASSERT_EQUAL_MESSAGE(int(Status::Ok), int(r.status), r.message.c_str());
+  TEST_ASSERT_EQUAL(16, int(p.mappedCount()));
+  TEST_ASSERT_EQUAL(0, int(p.warnings.size()));
+  // The RIOT M31 driver: AI FC4 0-3 (uA), DI FC2 0-3, DO FC1 0-3 written with FC15, AO FC3 0-3 written with FC6.
+  TEST_ASSERT_EQUAL_UINT16(3, p.find("ai4")->wire);
+  TEST_ASSERT_EQUAL(int(Space::InputRegister), int(p.find("ai1")->space));
+  TEST_ASSERT_EQUAL_FLOAT(0.001f, p.find("ai1")->scale);
+  TEST_ASSERT_EQUAL(int(Space::DiscreteInput), int(p.find("di1")->space));
+  TEST_ASSERT_EQUAL_UINT8(15, p.find("do2")->writeFc);
+  TEST_ASSERT_EQUAL_UINT8(6, p.find("ao1")->writeFc);
+}
+
 int main() {
   UNITY_BEGIN();
+  RUN_TEST(test_m31_emulation_profile);
   RUN_TEST(test_address_spec_vectors);
   RUN_TEST(test_address_six_digit_and_errors);
   RUN_TEST(test_codec_float_orders);

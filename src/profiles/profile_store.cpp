@@ -5,6 +5,8 @@
 // Embedded from data/ by board_build.embed_txtfiles (NUL-terminated).
 extern const char builtinProfile[] asm("_binary_data_profiles_test_bench_toml_start");
 extern const char builtinSim[] asm("_binary_data_sims_test_bench_sim_toml_start");
+extern const char builtinM31[] asm("_binary_data_profiles_riot_m31_emulation_toml_start");
+extern const char builtinM31Sim[] asm("_binary_data_sims_riot_m31_emulation_sim_toml_start");
 
 namespace profiles {
 namespace {
@@ -33,6 +35,8 @@ bool readFile(const String& path, String& out) {
 void installBuiltins() {
   writeIfMissing("/profiles", "/profiles/test_bench.toml", builtinProfile);
   writeIfMissing("/sims", "/sims/test_bench.sim.toml", builtinSim);
+  writeIfMissing("/profiles", "/profiles/riot_m31_emulation.toml", builtinM31);
+  writeIfMissing("/sims", "/sims/riot_m31_emulation.sim.toml", builtinM31Sim);
 }
 
 size_t loadDevices() {

@@ -169,8 +169,19 @@ void test_templates_for_every_profile() {
   TEST_ASSERT_EQUAL(9, profiles);
 }
 
+void test_m31_emulation_sim() {
+  Profile p;
+  TEST_ASSERT_EQUAL(int(Status::Ok), int(parse(readFile("data/profiles/riot_m31_emulation.toml"), p).status));
+  sim::Config c;
+  std::string error;
+  TEST_ASSERT_TRUE_MESSAGE(sim::parse(readFile("data/sims/riot_m31_emulation.sim.toml"), p, c, error), error.c_str());
+  TEST_ASSERT_EQUAL(0, int(c.warnings.size()));
+  TEST_ASSERT_EQUAL(16, int(c.entries.size()));
+}
+
 int main() {
   UNITY_BEGIN();
+  RUN_TEST(test_m31_emulation_sim);
   RUN_TEST(test_waveforms_over_time);
   RUN_TEST(test_write_overrides_until_resume);
   RUN_TEST(test_freeze_holds_values);

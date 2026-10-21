@@ -135,6 +135,9 @@ void begin() {
   name = buf;
   WiFi.persistent(false);
   WiFi.setAutoReconnect(false);  // reconnects are ours, with backoff
+  // No modem-sleep: as a server we must answer within the poller's timeout. With power
+  // saving on, connection replies can take 100-300 ms, and the RIOT gives up after 200 ms.
+  WiFi.setSleep(false);
   WiFi.setHostname(name.c_str());
   WiFi.onEvent([](arduino_event_id_t, arduino_event_info_t info) { disconnectReason = info.wifi_sta_disconnected.reason; },
                ARDUINO_EVENT_WIFI_STA_DISCONNECTED);

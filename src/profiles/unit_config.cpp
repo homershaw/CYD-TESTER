@@ -48,6 +48,11 @@ Config defaults() {
   d.profile = "test_bench.toml";
   d.sim = "test_bench.sim.toml";
   c.devices.push_back(d);
+  // Unit 2 answers like a RIOT M31 rack, for testing the RIOT's built-in M31 driver.
+  d.unitId = 2;
+  d.profile = "riot_m31_emulation.toml";
+  d.sim = "riot_m31_emulation.sim.toml";
+  c.devices.push_back(d);
   return c;
 }
 
@@ -182,9 +187,11 @@ bool load(String& error, Warnings& warnings) {
   return true;
 }
 
-bool save() {
+bool save() { return save(live); }
+
+bool save(const Config& c) {
   if (!LittleFS.exists("/config")) LittleFS.mkdir("/config");
-  const String text = toToml(live, false);
+  const String text = toToml(c, false);
   // Write to a temp file and rename so a power cut never leaves a half-written config.
   const char* tmp = "/config/unit.toml.tmp";
   File f = LittleFS.open(tmp, FILE_WRITE);

@@ -1,5 +1,6 @@
 #include "web_server.h"
 #include "../net/captive_portal.h"
+#include "api.h"
 
 namespace web {
 AsyncWebServer server(80);
@@ -18,6 +19,7 @@ String jsonEscape(const String& s) {
 }
 
 void begin() {
+  api::registerRoutes(server);
   portal::registerRoutes(server);
   server.begin();
 }

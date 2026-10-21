@@ -13,10 +13,11 @@
 #include "ui/led.h"
 #include "ui/qr.h"
 #include "ui/touch.h"
+#include "web/api.h"
 #include "web/web_server.h"
 
 #ifndef FW_VERSION
-#define FW_VERSION "0.5.0-phase5"
+#define FW_VERSION "0.5.1-phase5"
 #endif
 
 namespace {
@@ -207,6 +208,7 @@ void loop() {
   button::service();
   wifimgr::service();
   simulation.tick(millis());
+  api::service();
   ledPattern();
   ledPolls();
   led::service();

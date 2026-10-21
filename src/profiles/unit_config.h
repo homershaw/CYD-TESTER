@@ -51,5 +51,6 @@ String toToml(const Config& c, bool redactPasswords);
 // The live configuration; load() reads the file or creates it from defaults.
 Config& current();
 bool load(String& error, std::vector<String>& warnings);
-bool save();
+bool save();                  // writes current()
+bool save(const Config& c);   // writes c without changing current()
 }  // namespace unitcfg
