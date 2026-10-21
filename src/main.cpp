@@ -146,6 +146,10 @@ void ledPolls() {
 }
 }  // namespace
 
+// The default 8 KB loop stack overflowed while parsing several profiles at boot
+// (toml++ parses use a lot of stack). Heap is plentiful, so give the loop 16 KB.
+SET_LOOP_TASK_STACK_SIZE(16 * 1024);
+
 void setup() {
   Serial.begin(115200);
   delay(50);
@@ -161,6 +165,7 @@ void setup() {
   for (const auto& w : warnings) Serial.printf("unit.toml: %s\n", w.c_str());
   profiles::installBuiltins();
   profiles::loadDevices();
+  Serial.printf("Loop stack: %u bytes unused after loading profiles\n", unsigned(uxTaskGetStackHighWaterMark(nullptr)));
   runtime::begin();
 
   const auto& dc = unitcfg::current().display;
@@ -224,9 +229,9 @@ void loop() {
   if (now - lastLog >= 10000) {
     lastLog = now;
     const auto s = mbserver::stats();
-    Serial.printf("wifi=%s ip=%s ap=%d modbus req=%u exc=%u clients=%u heap=%u min=%u\n", wifimgr::stateText(),
+    Serial.printf("wifi=%s ip=%s ap=%d modbus req=%u exc=%u clients=%u heap=%u min=%u stack_free=%u\n", wifimgr::stateText(),
                   wifimgr::stationIp().toString().c_str(), wifimgr::apActive(), s.requests, s.exceptions, s.activeClients,
-                  ESP.getFreeHeap(), ESP.getMinFreeHeap());
+                  ESP.getFreeHeap(), ESP.getMinFreeHeap(), unsigned(uxTaskGetStackHighWaterMark(nullptr)));
   }
   delay(5);
 }
