@@ -1,4 +1,5 @@
 #include "profile_store.h"
+#include <new>
 #include <LittleFS.h>
 #include "unit_config.h"
 
@@ -53,7 +54,14 @@ size_t loadDevices() {
       loaded.push_back(std::move(dev));
       continue;
     }
-    const auto r = profile::parse(std::string_view(text.c_str(), text.length()), *dev.profile);
+    profile::ParseResult r;
+    try {
+      r = profile::parse(std::string_view(text.c_str(), text.length()), *dev.profile);
+    } catch (const std::bad_alloc&) {
+      r = {profile::Status::Error, "not enough memory to load this profile"};
+      *dev.profile = profile::Profile{};
+    }
+    text = String();  // the parsed structs are all that is kept
     dev.status = r.status;
     dev.message = r.message.c_str();
     if (r.status == profile::Status::Ok) {

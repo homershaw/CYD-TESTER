@@ -47,6 +47,24 @@ REST API (JSON; config and sims are TOML):
 
 State-changing calls need HTTP Basic auth (user `admin`) when `admin_password` is set.
 
+## Loading profiles from the MutliFlowOTA repo
+
+`tools/sync_profiles.py` pushes profiles from a local folder, such as a clone of MutliFlowOTA, to the unit. It needs only the Python standard library.
+
+```
+python tools/sync_profiles.py 192.168.1.14 C:\Users\scada\MutliFlowOTA\toml
+python tools/sync_profiles.py riot-2A14.local ..\MutliFlowOTA\toml --pull      # git pull first
+python tools/sync_profiles.py 192.168.1.14 ..\MutliFlowOTA\toml "scada*" --dry-run
+```
+
+- Each file goes through the normal upload API, so it is validated and stored byte-for-byte, exactly like a browser upload.
+- Identical files are skipped. Driver profiles (`riot_m31.toml`) are reported as skipped.
+- Replaced profiles that a device is serving take effect after a reboot.
+- `--force` re-uploads everything, `--password` handles `admin_password`, and the exit code is non-zero if anything fails.
+- The unit itself never contacts GitHub. That would need an HTTPS client of about 124 KB, against about 10 KB of built-in profiles.
+
+Memory: the profile and sim parsers feed toml++ one table at a time (`src/profiles/toml_chunks.*`), so peak memory is one tag's document rather than the whole file's. The 79-tag Brennan profile peaks at about 48 KB instead of 175 KB (PC figures; less on the ESP32). If a parse still runs out of heap, the API returns HTTP 507 instead of restarting the unit.
+
 ## Build and flash
 
 ```

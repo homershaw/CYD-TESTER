@@ -2,6 +2,7 @@
 #include "version.h"
 #include <algorithm>
 #include <cmath>
+#include <new>
 #include <LittleFS.h>
 #include <WiFi.h>
 #include "../app/runtime.h"
@@ -292,19 +293,35 @@ void listProfiles(AsyncWebServerRequest* r) {
 }
 
 void uploadProfile(AsyncWebServerRequest* r, const String& filename, size_t index, uint8_t* data, size_t len, bool final) {
+  // The multipart body is slightly larger than the file: enough room, without reserving the 48 KB limit.
+  const size_t room = r->contentLength() ? r->contentLength() : MaxProfileBytes;
   if (index == 0) {
-    r->_tempObject = calloc(MaxProfileBytes + 1, 1);
+    if (room > MaxProfileBytes + 1024) return;
+    r->_tempObject = calloc(room + 1, 1);
     if (!r->_tempObject) return;
   }
   auto* buf = static_cast<char*>(r->_tempObject);
   if (!buf) return;
-  if (index + len > MaxProfileBytes) { free(buf); r->_tempObject = nullptr; return; }
+  if (index + len > MaxProfileBytes || index + len > room) { free(buf); r->_tempObject = nullptr; return; }
   memcpy(buf + index, data, len);
   (void)filename;
   (void)final;
 }
 
+void handleProfilesImpl(AsyncWebServerRequest* r);
+
+// Parsing a big profile is the one place the API can run short of heap: answer with
+// an error instead of letting std::bad_alloc abort the whole unit.
 void handleProfiles(AsyncWebServerRequest* r) {
+  try {
+    handleProfilesImpl(r);
+  } catch (const std::bad_alloc&) {
+    sendError(r, 507, "Not enough memory to process this profile on the test unit (free heap " +
+                          String(ESP.getFreeHeap() / 1024) + " KB)");
+  }
+}
+
+void handleProfilesImpl(AsyncWebServerRequest* r) {
   const auto seg = segments(r->url(), "/api/profiles");
   const auto m = r->method();
   if (seg.empty()) {
@@ -419,7 +436,16 @@ void handleValues(AsyncWebServerRequest* r) {
 }
 
 // ---------- sim ----------
+void handleSimImpl(AsyncWebServerRequest* r);
 void handleSim(AsyncWebServerRequest* r) {
+  try {
+    handleSimImpl(r);
+  } catch (const std::bad_alloc&) {
+    sendError(r, 507, "Not enough memory to process this simulation file on the test unit");
+  }
+}
+
+void handleSimImpl(AsyncWebServerRequest* r) {
   const auto seg = segments(r->url(), "/api/sim");
   if (seg.empty()) return sendError(r, 400, "Use /api/sim/<unit>");
   const long unit = seg[0].toInt();

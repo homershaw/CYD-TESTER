@@ -230,8 +230,39 @@ void test_m31_emulation_profile() {
   TEST_ASSERT_EQUAL_UINT8(6, p.find("ao1")->writeFc);
 }
 
+void test_chunked_parsing() {
+  // A multi-line string holding a "[table]"-looking line must not split the document,
+  // header comments are allowed, and errors report the line in the whole file.
+  const char* text = R"(schema_version = 2
+[device]   # identity
+profile_id = "chunks"
+description = """
+[not a header]
+"""
+[modbus]
+address_format = "zero_based"
+[[tags]]
+id = "a"
+read_function = 3
+register = 5
+data_type = "uint16"
+)";
+  Profile p;
+  const auto r = parse(text, p);
+  TEST_ASSERT_EQUAL_MESSAGE(int(Status::Ok), int(r.status), r.message.c_str());
+  TEST_ASSERT_EQUAL(1, int(p.tags.size()));
+  TEST_ASSERT_EQUAL_UINT16(5, p.find("a")->wire);
+  const auto bad = parse("schema_version = 2\n[device]\nprofile_id = \"x\"\n[[tags]]\nid = \"a\"\nregister = = 1\n", p);
+  TEST_ASSERT_EQUAL(int(Status::Error), int(bad.status));
+  TEST_ASSERT_TRUE_MESSAGE(bad.message.find("line 6") != std::string::npos, bad.message.c_str());
+  TEST_ASSERT_EQUAL(int(Status::Error), int(parse("[device\nprofile_id = \"x\"\n", p).status));  // malformed header
+  TEST_ASSERT_EQUAL(int(Status::Error),
+                    int(parse("[device]\nprofile_id = \"x\"\n[device]\nmodel = \"y\"\n", p).status));  // table twice
+}
+
 int main() {
   UNITY_BEGIN();
+  RUN_TEST(test_chunked_parsing);
   RUN_TEST(test_m31_emulation_profile);
   RUN_TEST(test_address_spec_vectors);
   RUN_TEST(test_address_six_digit_and_errors);

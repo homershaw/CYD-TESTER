@@ -1,5 +1,6 @@
 #include "sim_config.h"
 #include <algorithm>
+#include "toml_chunks.h"
 #include <cstdio>
 #include <toml++/toml.hpp>
 
@@ -43,29 +44,31 @@ bool number(const toml::table& t, const char* key, double& out) {
 
 bool parse(std::string_view text, const profile::Profile& p, Config& out, std::string& error) {
   out = Config{};
-  auto result = toml::parse(text);
-  if (!result) {
-    error = "TOML syntax error at line " + std::to_string(result.error().source().begin.line) + ": " +
-            std::string(result.error().description());
-    return false;
-  }
-  const toml::table& root = result.table();
+  // One table at a time (see toml_chunks.h): a generated sim has one [[sim]] per tag.
+  std::vector<tomlx::Chunk> chunks;
+  if (!tomlx::split(text, chunks, error)) return false;
+  toml::table root;
+  if (!tomlx::parse(chunks[0], root, error)) return false;
   for (const auto& [key, node] : root) {
     const std::string_view k = key.str();
-    if (k != "schema_version" && k != "profile_id" && k != "sim") out.warnings.push_back("unknown key '" + std::string(k) + "' ignored");
+    if (k != "schema_version" && k != "profile_id") out.warnings.push_back("unknown key '" + std::string(k) + "' ignored");
   }
+  for (size_t i = 1; i < chunks.size(); ++i)
+    if (!(chunks[i].array && chunks[i].name == "sim"))
+      out.warnings.push_back("unknown table " + std::string(chunks[i].array ? "[[" : "[") + chunks[i].name +
+                             (chunks[i].array ? "]]" : "]") + " ignored");
   out.profileId = root["profile_id"].value_or<std::string>("");
   if (out.profileId.empty()) { error = "profile_id is missing"; return false; }
   if (out.profileId != p.profileId)
     out.warnings.push_back("profile_id \"" + out.profileId + "\" does not match the profile (\"" + p.profileId + "\")");
 
-  const toml::array* sims = root["sim"].as_array();
-  if (!sims) return true;
   size_t index = 0;
-  for (const auto& node : *sims) {
+  for (size_t ci = 1; ci < chunks.size(); ++ci) {
+    if (!chunks[ci].array || chunks[ci].name != "sim") continue;
     std::string where = "sim[" + std::to_string(index++) + "]";
-    const toml::table* t = node.as_table();
-    if (!t) { out.warnings.push_back(where + " is not a table; skipped"); continue; }
+    toml::table simTable;  // one entry's DOM at a time
+    if (!tomlx::parse(chunks[ci], simTable, error)) return false;
+    const toml::table* t = &simTable;
     Entry e;
     e.tag = (*t)["tag"].value_or<std::string>("");
     if (e.tag.empty()) { out.warnings.push_back(where + " has no tag; skipped"); continue; }

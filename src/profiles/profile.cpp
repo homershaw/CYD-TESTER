@@ -4,6 +4,7 @@
 #include <map>
 #include <toml++/toml.hpp>
 #include "../modbus/address_map.h"
+#include "toml_chunks.h"
 
 namespace profile {
 const char* toString(DataType t) {
@@ -103,20 +104,35 @@ void checkOverlaps(const Profile& p, Warnings& w) {
 ParseResult parse(std::string_view text, Profile& out) {
   out = Profile{};
   Warnings& w = out.warnings;
-  auto result = toml::parse(text);
-  if (!result) {
-    const auto& e = result.error();
-    return {Status::Error, "TOML syntax error at line " + std::to_string(e.source().begin.line) + ": " +
-                               std::string(e.description())};
+  // One table at a time (see toml_chunks.h): small tables first, then the tags stream through.
+  std::vector<tomlx::Chunk> chunks;
+  std::string error;
+  if (!tomlx::split(text, chunks, error)) return {Status::Error, error};
+  toml::table root, deviceTable, modbusTable, driverTable;
+  bool haveDevice = false, haveModbus = false, haveDriver = false;
+  size_t tagChunks = 0;
+  for (const auto& c : chunks) {
+    if (c.array) {
+      if (c.name == "tags") ++tagChunks;
+      else w.push_back("unknown array [[" + c.name + "]] ignored");
+      continue;
+    }
+    toml::table* target = c.name.empty() ? &root : c.name == "device" ? &deviceTable : c.name == "modbus" ? &modbusTable
+                        : c.name == "driver" ? &driverTable : nullptr;
+    if (!target) { w.push_back("unknown table [" + c.name + "] ignored"); continue; }
+    bool& seen = c.name == "device" ? haveDevice : c.name == "modbus" ? haveModbus : haveDriver;
+    if (!c.name.empty()) {
+      if (seen) return {Status::Error, "[" + c.name + "] is defined twice"};
+      seen = true;
+    }
+    if (!tomlx::parse(c, *target, error)) return {Status::Error, error};
   }
-  const toml::table& root = result.table();
-  unknownKeys(root, {"schema_version", "device", "modbus", "tags", "driver"}, "", w);
+  unknownKeys(root, {"schema_version"}, "", w);
 
-  const toml::table* modbus = root["modbus"].as_table();
-  const toml::array* tags = root["tags"].as_array();
-  if (!modbus && !tags) {
-    if (const auto* driver = root["driver"].as_table()) {
-      const std::string type = str(*driver, "type", "unknown");
+  const toml::table* modbus = haveModbus ? &modbusTable : nullptr;
+  if (!modbus && !tagChunks) {
+    if (haveDriver) {
+      const std::string type = str(driverTable, "type", "unknown");
       return {Status::NotModbus, "This is a RIOT driver profile (type = \"" + type +
                                      "\"), not a Modbus device profile. It has no [modbus] table or [[tags]] to serve."};
     }
@@ -127,7 +143,7 @@ ParseResult parse(std::string_view text, Profile& out) {
   if (out.schemaVersion != 1 && out.schemaVersion != 2)
     w.push_back("schema_version " + std::to_string(out.schemaVersion) + " not recognised; parsed with the version 2 rules");
 
-  const toml::table* device = root["device"].as_table();
+  const toml::table* device = haveDevice ? &deviceTable : nullptr;
   if (!device) return {Status::Error, "[device] table is missing"};
   unknownKeys(*device, {"profile_id", "profile_version", "vendor", "model", "description"}, "[device] ", w);
   out.profileId = str(*device, "profile_id");
@@ -168,12 +184,13 @@ ParseResult parse(std::string_view text, Profile& out) {
     w.push_back("[modbus] table missing; address basis not stated: register numbers are used unchanged on the wire");
   }
 
-  if (!tags) return {Status::Ok, {}};
   size_t index = 0;
-  for (const auto& node : *tags) {
+  for (const auto& c : chunks) {
+    if (!c.array || c.name != "tags") continue;
     std::string where = "tags[" + std::to_string(index++) + "]";
-    const toml::table* t = node.as_table();
-    if (!t) { w.push_back(where + " is not a table; skipped"); continue; }
+    toml::table tagTable;  // freed at the end of each iteration: only one tag's DOM is alive
+    if (!tomlx::parse(c, tagTable, error)) return {Status::Error, error};
+    const toml::table* t = &tagTable;
     Tag tag;
     tag.id = str(*t, "id");
     if (tag.id.empty()) { w.push_back(where + " has no id; skipped"); continue; }
