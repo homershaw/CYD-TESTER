@@ -46,7 +46,9 @@ async function loadDash() {
   status = await api('/api/status');
   const s = status, m = s.modbus;
   $('net').innerHTML = dl([
-    ['Wi-Fi', esc(s.wifi.state) + (s.wifi.ap ? ' + setup AP' : '')], ['SSID', esc(s.wifi.ssid)],
+    ['Wi-Fi', esc(s.wifi.state) + (s.wifi.ap ? ' + setup AP' : '')],
+    ['Network', s.wifi.network ? esc(s.wifi.network) + (s.wifi.pairedRiot ? ' <span class="tag">RIOT pairing</span>' : '') : '-'],
+    ['Saved network', esc(s.wifi.ssid)],
     ['IP', esc(s.wifi.ip || '-')], ['RSSI', s.wifi.rssi ? s.wifi.rssi + ' dBm' : '-'],
     ['Host', esc(s.name) + '.local'], ['Uptime', Math.floor(s.uptimeS / 3600) + ' h ' + Math.floor(s.uptimeS % 3600 / 60) + ' min'],
     ['Free heap', `${(s.heap / 1024).toFixed(0)} KB (min ${(s.minHeap / 1024).toFixed(0)})`]]);

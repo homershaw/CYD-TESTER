@@ -153,6 +153,7 @@ void getStatus(AsyncWebServerRequest* r) {
   String j = "{\"name\":" + str(wifimgr::unitName()) + ",\"firmware\":\"" FW_VERSION "\"";
   j += ",\"uptimeS\":" + String(millis() / 1000) + ",\"heap\":" + String(ESP.getFreeHeap()) + ",\"minHeap\":" + String(ESP.getMinFreeHeap());
   j += ",\"wifi\":{\"state\":\"" + String(wifimgr::stateText()) + "\",\"ssid\":" + str(wifimgr::savedWifi().ssid);
+  j += ",\"network\":" + str(wifimgr::network()) + ",\"pairedRiot\":" + str(wifimgr::pairedRiot());
   j += ",\"ip\":\"" + (connected ? wifimgr::stationIp().toString() : String()) + "\",\"rssi\":" + String(wifimgr::rssi());
   j += ",\"ap\":" + boolean(wifimgr::apActive()) + ",\"apClients\":" + String(wifimgr::apClients()) + "}";
   j += ",\"modbus\":{\"port\":" + String(unitcfg::current().modbus.port) + ",\"requests\":" + String(s.requests);
@@ -494,6 +495,7 @@ void putConfig(AsyncWebServerRequest* r) {
   const auto& cur = unitcfg::current();
   if (next.wifi.password == unitcfg::RedactedPassword) next.wifi.password = cur.wifi.password;
   if (next.apPassword == unitcfg::RedactedPassword) next.apPassword = cur.apPassword;
+  if (next.pairing.password == unitcfg::RedactedPassword) next.pairing.password = cur.pairing.password;
   if (next.adminPassword == unitcfg::RedactedPassword) next.adminPassword = cur.adminPassword;
   if (!unitcfg::save(next)) return sendError(r, 500, "Could not write /config/unit.toml");
   sendJson(r, 200, "{\"ok\":true,\"restartRequired\":true,\"warnings\":" + warningsJson(warnings) + "}");

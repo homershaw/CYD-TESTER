@@ -20,6 +20,35 @@ Scope set by the user (2026-10-20):
 
 Sizes (env `cyd`): flash was 1.11 MB after phase 1, 1.24 MB after phase 2, 1.27 MB after phase 3, 1.29 MB after phase 4 and 1.30 MB after phase 5. Phase 6 uses RAM 54.3 KB of 320 KB and flash 1.39 MB of the 1600 KB app slot. The web UI is 7.5 KB gzipped.
 
+## Pairing with a RIOT (no network needed)
+
+The unit pairs itself with a RIOT so sales staff can just power both on:
+
+1. On boot it scans. If the **saved network** is in range, it joins that; a manually chosen network always wins.
+2. Otherwise it **pairs with the strongest RIOT service hotspot** (`Riot-XXXX`, the P4 Walkup AP):
+   - password `riotwifi`, fixed address **192.168.4.200** (no DHCP needed);
+   - the screen and dashboard show "paired" and "(RIOT pairing)".
+3. If neither is in range, it opens its setup hotspot and keeps rescanning, so a RIOT switched on later is still found.
+
+On the RIOT, set the device or M31 rack address to **192.168.4.200**, port 502, once. To use a bigger network instead, hold BOOT 3 s, join `riot-XXXX`, open http://192.168.5.1 and pick the network; it is saved and preferred from then on.
+
+The `[pairing]` section of `unit.toml` holds these defaults:
+
+```toml
+[pairing]
+enabled = true
+ssid_prefix = "Riot-"     # case-sensitive; never matches a CYD's own "riot-XXXX" hotspot
+password = "riotwifi"     # RIOT Walkup default
+ip = "192.168.4.200"      # outside the RIOT hotspot's DHCP pool (about .2-.101)
+netmask = "255.255.255.0"
+gateway = "192.168.4.1"
+```
+
+- **Second CYD on the same RIOT:** set its `ip` to `192.168.4.201`.
+- **Several RIOTs in range:** the unit pairs with the strongest signal, so keep one RIOT per CYD at a demo. To pin a specific RIOT, set `ssid_prefix` to its full name, e.g. `Riot-6183`.
+- **Setup AP address:** the setup hotspot is at **192.168.5.1**, not the spec's 192.168.4.1, so it can never overlap the RIOT network the unit pairs with.
+- **On-screen Setup AP button:** it needs a deliberate 0.5 s press, so a stray touch cannot open the hotspot.
+
 ## Web UI
 
 Open `http://<unit IP>/` or `http://riot-XXXX.local/`. The setup AP side of `/` is the Wi-Fi portal.

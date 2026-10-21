@@ -65,7 +65,7 @@ bool parse(const String& text, Config& out, String& error, Warnings& w) {
   }
   const toml::table& root = result.table();
   Config c = defaults();
-  unknownKeys(root, {"schema_version", "wifi", "portal", "modbus", "devices", "web", "display"}, "", w);
+  unknownKeys(root, {"schema_version", "wifi", "pairing", "portal", "modbus", "devices", "web", "display"}, "", w);
   int64_t schema = root["schema_version"].value_or<int64_t>(1);
   if (schema != 1) warn(w, "schema_version " + String(long(schema)) + " is newer than this firmware understands");
 
@@ -84,6 +84,16 @@ bool parse(const String& text, Config& out, String& error, Warnings& w) {
     getString(*t, "dns", c.wifi.dns, "wifi.", w);
     getInt(*t, "connect_timeout_s", c.wifi.connectTimeoutS, 5, 300, "wifi.", w);
     getInt(*t, "portal_after_s", c.wifi.portalAfterS, 10, 3600, "wifi.", w);
+  }
+  if (const auto* t = root["pairing"].as_table()) {
+    unknownKeys(*t, {"enabled", "ssid_prefix", "password", "ip", "netmask", "gateway"}, "pairing.", w);
+    getBool(*t, "enabled", c.pairing.enabled, "pairing.", w);
+    getString(*t, "ssid_prefix", c.pairing.ssidPrefix, "pairing.", w);
+    getString(*t, "password", c.pairing.password, "pairing.", w);
+    getString(*t, "ip", c.pairing.ip, "pairing.", w);
+    getString(*t, "netmask", c.pairing.netmask, "pairing.", w);
+    getString(*t, "gateway", c.pairing.gateway, "pairing.", w);
+    if (!c.pairing.ssidPrefix.length()) { warn(w, "pairing.ssid_prefix is empty; pairing disabled"); c.pairing.enabled = false; }
   }
   if (const auto* t = root["portal"].as_table()) {
     unknownKeys(*t, {"ap_password"}, "portal.", w);
@@ -149,6 +159,10 @@ String toToml(const Config& c, bool redact) {
       .kv("static_ip", c.wifi.ip).kv("netmask", c.wifi.netmask)
       .kv("gateway", c.wifi.gateway).kv("dns", c.wifi.dns)
       .kv("connect_timeout_s", int(c.wifi.connectTimeoutS)).kv("portal_after_s", int(c.wifi.portalAfterS));
+  w.table("pairing")
+      .kv("enabled", c.pairing.enabled).kv("ssid_prefix", c.pairing.ssidPrefix)
+      .kv("password", pw(c.pairing.password)).kv("ip", c.pairing.ip)
+      .kv("netmask", c.pairing.netmask).kv("gateway", c.pairing.gateway);
   w.table("portal").kv("ap_password", pw(c.apPassword));
   w.table("modbus")
       .kv("port", int(c.modbus.port)).kv("max_clients", int(c.modbus.maxClients))

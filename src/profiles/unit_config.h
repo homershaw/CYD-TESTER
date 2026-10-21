@@ -16,6 +16,16 @@ struct Wifi {
   uint16_t connectTimeoutS = 20;
   uint16_t portalAfterS = 120;
 };
+// Automatic pairing with a RIOT's own service hotspot (Walkup, "Riot-XXXX") when the
+// saved network is not in range, so the pair works with no site network or DHCP.
+struct Pairing {
+  bool enabled = true;
+  String ssidPrefix = "Riot-";   // case-sensitive: never matches a CYD's own "riot-XXXX" hotspot
+  String password = "riotwifi";  // RIOT Walkup default
+  String ip = "192.168.4.200";   // outside the RIOT hotspot's DHCP pool (about .2-.101)
+  String netmask = "255.255.255.0";
+  String gateway = "192.168.4.1";
+};
 struct Modbus {
   uint16_t port = 502;
   uint8_t maxClients = 4;
@@ -36,6 +46,7 @@ struct Display {
 };
 struct Config {
   Wifi wifi;
+  Pairing pairing;
   String apPassword;
   Modbus modbus;
   std::vector<Device> devices;

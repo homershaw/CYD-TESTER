@@ -5,7 +5,8 @@
 
 // Station connection, setup AP and mDNS (PROMPT.md section 4).
 namespace wifimgr {
-enum class State : uint8_t { NoCredentials, Connecting, Connected, Retrying };
+// Searching: scanning to pick the saved network (if in range) or a RIOT hotspot to pair with.
+enum class State : uint8_t { NoCredentials, Searching, Connecting, Connected, Retrying };
 enum class Trial : uint8_t { Idle, Running, Succeeded, Failed };
 
 void begin();
@@ -28,6 +29,10 @@ uint8_t apClients();
 uint32_t apOffInS();  // 0 = no scheduled shutdown
 const String& unitName();  // riot-XXXX
 IPAddress stationIp();
+IPAddress apIp();             // setup AP address (192.168.5.1)
+String network();             // SSID currently joined, "" if not connected
+String pairedRiot();          // RIOT hotspot SSID when paired automatically, else ""
+bool searching();             // a Wi-Fi scan is in progress (the portal must not start or delete one)
 int rssi();
 String lastFailure();
 // Copy of the saved station settings, safe to call from AsyncTCP's task.

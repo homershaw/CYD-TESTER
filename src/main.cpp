@@ -78,11 +78,14 @@ void drawLine(int16_t y, const String& value, uint16_t color) {
 void refresh() {
   const auto st = wifimgr::state();
   const bool connected = st == wifimgr::State::Connected;
-  const uint16_t stateColor = connected ? TFT_GREEN : st == wifimgr::State::Connecting ? TFT_YELLOW : TFT_ORANGE;
+  const bool busy = st == wifimgr::State::Connecting || st == wifimgr::State::Searching;
+  const uint16_t stateColor = connected ? TFT_GREEN : busy ? TFT_YELLOW : TFT_ORANGE;
   String state = wifimgr::stateText();
   if (!connected && wifimgr::lastFailure().length()) state += ": " + wifimgr::lastFailure();
   drawValue(0, state, stateColor);
-  drawValue(1, wifimgr::savedWifi().ssid);
+  const String paired = wifimgr::pairedRiot();
+  drawValue(1, connected ? wifimgr::network() + (paired.length() ? " (RIOT pairing)" : "") : wifimgr::savedWifi().ssid,
+            paired.length() ? TFT_CYAN : TFT_WHITE);
   drawValue(2, connected ? wifimgr::stationIp().toString() : String("--"));
   drawValue(3, connected ? String(wifimgr::rssi()) + " dBm" : String("--"));
   drawValue(4, wifimgr::unitName() + ".local");
@@ -110,7 +113,7 @@ void refresh() {
              sec >= 10 ? TFT_RED : TFT_YELLOW);
   } else if (apShown) {
     const uint32_t off = wifimgr::apOffInS();
-    drawLine(184, "Join " + wifimgr::unitName() + ", open 192.168.4.1", TFT_CYAN);
+    drawLine(184, "Join " + wifimgr::unitName() + ", open " + wifimgr::apIp().toString(), TFT_CYAN);
     drawLine(206, String(wifimgr::apClients()) + " phone(s) connected" + (off ? ", AP closes in " + String(off) + " s" : String()),
              TFT_LIGHTGREY);
   } else if (s.requests) {
@@ -195,9 +198,21 @@ void loop() {
   if (button::crossed(3000)) { Serial.println("BOOT 3 s: setup AP requested"); wifimgr::requestPortal(); }
   if (button::crossed(10000)) { Serial.println("BOOT 10 s: network reset"); wifimgr::resetNetwork(); }
 
+  // The Setup AP button needs a deliberate press: held inside the button for 500 ms,
+  // so a brush of the screen or a stray touch reading cannot open the hotspot.
+  static uint32_t buttonSince = 0;
+  static bool buttonFired = false;
   const touch::Point p = touch::read();
-  if (p.pressed && !wasPressed && !apShown && p.x >= ButtonX && p.x < ButtonX + ButtonW && p.y >= ButtonY &&
-      p.y < ButtonY + ButtonH) {
+  const bool onButton = p.pressed && !apShown && p.x >= ButtonX && p.x < ButtonX + ButtonW && p.y >= ButtonY &&
+                        p.y < ButtonY + ButtonH;
+  if (!onButton) {
+    buttonSince = 0;
+    buttonFired = false;
+  } else if (!buttonSince) {
+    buttonSince = millis();
+  } else if (!buttonFired && millis() - buttonSince >= 500) {
+    buttonFired = true;
+    Serial.printf("Touch: Setup AP button held at x=%d y=%d; setup AP requested\n", p.x, p.y);
     led::flash(led::Color::Blue, 60);
     wifimgr::requestPortal();
   }

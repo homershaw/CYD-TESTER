@@ -9,7 +9,7 @@ namespace portal {
 namespace {
 DNSServer dns;
 bool dnsUp = false;
-const char* PortalUrl = "http://192.168.4.1/";
+String portalUrl() { return "http://" + WiFi.softAPIP().toString() + "/"; }
 
 const char PortalHtml[] PROGMEM = R"HTML(<!doctype html><html><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1"><title>RIOT test unit setup</title>
@@ -103,6 +103,8 @@ void handleStatus(AsyncWebServerRequest* r) {
 }
 
 void handleScan(AsyncWebServerRequest* r) {
+  // The Wi-Fi manager owns the scan while it is searching for a network or a RIOT to pair with.
+  if (wifimgr::searching()) { r->send(200, "application/json", "{\"scanning\":true}"); return; }
   const int16_t n = WiFi.scanComplete();
   if (n == WIFI_SCAN_RUNNING) { r->send(200, "application/json", "{\"scanning\":true}"); return; }
   if (n < 0) {  // none yet, or the last one failed: start a new one
@@ -137,14 +139,14 @@ void registerRoutes(AsyncWebServer& server) {
   // OS connectivity probes: answer with a redirect so the portal opens automatically.
   for (const char* probe : {"/generate_204", "/gen_204", "/hotspot-detect.html", "/library/test/success.html",
                             "/ncsi.txt", "/connecttest.txt", "/redirect", "/fwlink"}) {
-    server.on(probe, HTTP_ANY, [](AsyncWebServerRequest* r) { r->redirect(PortalUrl); });
+    server.on(probe, HTTP_ANY, [](AsyncWebServerRequest* r) { r->redirect(portalUrl()); });
   }
   server.on("/", HTTP_GET, [](AsyncWebServerRequest* r) {
     if (viaAp(r)) { sendPortal(r); return; }
     www::sendIndex(r);  // station side: the web UI
   });
   server.onNotFound([](AsyncWebServerRequest* r) {
-    if (viaAp(r)) r->redirect(PortalUrl);  // any unknown host or path on the AP lands on the portal
+    if (viaAp(r)) r->redirect(portalUrl());  // any unknown host or path on the AP lands on the portal
     else r->send(404, "text/plain", "Not found");
   });
 }
