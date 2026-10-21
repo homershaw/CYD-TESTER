@@ -13,3 +13,9 @@ Modbus TCP test unit for the RIOT controller, running on an ESP32-2432S028R "Che
 ## Shared PlatformIO install
 
 This PC also builds ESP32-P4 projects that need esptool 5.4.0. The core-2.x platform installed esptool 4.5.1 into `~/.platformio/packages/tool-esptoolpy`, which made the shared penv `python -m esptool` load 4.5.1. The fix is to repoint it with `pip install --no-deps -e` to the 5.4.0 copy in `tool-esptoolpy@src-...`. CYD uploads are unaffected, because the platform runs its own `esptool.py` script.
+
+## Pairing design (decided with the user, 2026-10-21)
+
+- One tester, any RIOT. Every tester pairs at the same fixed address, 192.168.4.200, and every demo RIOT polls that address, so testers and RIOTs are interchangeable.
+- With several RIOTs in range the tester pairs with the nearest one (strongest signal) and stays with it while the link holds. Do not add sticky or per-kit pairing; it was considered and rejected.
+- A saved (manually chosen) network always wins over pairing. The setup AP is on 192.168.5.1 so it never overlaps a RIOT's 192.168.4.x hotspot.
