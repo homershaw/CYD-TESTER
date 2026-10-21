@@ -1,12 +1,11 @@
 // RIOT Modbus TCP Test Unit (CYD-TESTER)
-// Phase 4: Modbus TCP server serving profile tags with static values,
-// on top of board bring-up (1), Wi-Fi and portal (2) and the profile parser (3).
+// Board bring-up, Wi-Fi and portal, profiles, Modbus TCP server, simulation and web API.
 #include <Arduino.h>
 #include <LittleFS.h>
+#include "app/runtime.h"
 #include "modbus/server.h"
 #include "net/wifi_manager.h"
 #include "profiles/profile_store.h"
-#include "profiles/sim_engine.h"
 #include "profiles/unit_config.h"
 #include "ui/button.h"
 #include "ui/display.h"
@@ -17,32 +16,14 @@
 #include "web/web_server.h"
 
 #ifndef FW_VERSION
-#define FW_VERSION "0.5.1-phase5"
+#define FW_VERSION "0.6.0-phase6"
 #endif
 
 namespace {
 auto& tft = display::tft;
-store::Store values;
-simeng::Engine simulation(values);
 constexpr int16_t ValueX = 74, RowY = 40, RowH = 20;
 constexpr int16_t ButtonX = 8, ButtonY = 198, ButtonW = 150, ButtonH = 36;
 bool apShown = false;
-
-void buildStore() {
-  for (const auto& d : profiles::devices()) {
-    if (d.status != profile::Status::Ok) continue;
-    values.devices.emplace_back(d.unitId, d.enabled, d.profile);
-    auto& dev = values.devices.back();
-    for (size_t i = 0; i < d.profile->tags.size(); ++i) {
-      const auto& tag = d.profile->tags[i];
-      dev.setValue(i, sim::startValue(tag, d.sim.find(tag.id)));
-    }
-    simulation.configure(values.devices.size() - 1, d.sim, millis());
-  }
-#if HAS_LDR
-  simulation.ldr = [] { return double(analogRead(PIN_LDR)); };
-#endif
-}
 
 void header() {
   tft.fillRect(0, 0, SCREEN_W, 26, TFT_NAVY);
@@ -179,7 +160,7 @@ void setup() {
   for (const auto& w : warnings) Serial.printf("unit.toml: %s\n", w.c_str());
   profiles::installBuiltins();
   profiles::loadDevices();
-  buildStore();
+  runtime::begin();
 
   const auto& dc = unitcfg::current().display;
   display::begin(dc.rotation, dc.brightness);
@@ -196,8 +177,8 @@ void setup() {
   settings.unmappedReadZero = mc.unmappedReadZero;
   settings.strictFunctionCodes = mc.strictFunctionCodes;
   settings.firmwareVersion = FW_VERSION;
-  mbserver::begin(values, settings, mc.port, mc.maxClients, mc.idleTimeoutS);
-  Serial.printf("Modbus TCP server on port %u, %u device(s), max %u clients\n", mc.port, unsigned(values.devices.size()),
+  mbserver::begin(runtime::values(), settings, mc.port, mc.maxClients, mc.idleTimeoutS);
+  Serial.printf("Modbus TCP server on port %u, %u device(s), max %u clients\n", mc.port, unsigned(runtime::values().devices.size()),
                 mc.maxClients);
   drawLayout(wifimgr::apActive());
 }
@@ -207,7 +188,7 @@ void loop() {
   static bool wasPressed = false;
   button::service();
   wifimgr::service();
-  simulation.tick(millis());
+  runtime::service();
   api::service();
   ledPattern();
   ledPolls();

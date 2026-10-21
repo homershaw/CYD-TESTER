@@ -69,6 +69,22 @@ void Device::setWords(size_t i, const uint16_t* words) {
   ++tv.writeCount;
 }
 
+void Device::override(size_t i, double v) {
+  setValue(i, v);
+  values[i].overridden = true;
+}
+
+void Device::noteRead(size_t i, uint32_t now) {
+  auto& tv = values[i];
+  if (tv.readCount) {
+    const uint32_t gap = now - tv.lastReadMs;
+    // Smooth over a few polls so one late request doesn't swing the figure.
+    tv.pollIntervalMs = tv.pollIntervalMs ? (tv.pollIntervalMs * 3 + gap) / 4 : gap;
+  }
+  ++tv.readCount;
+  tv.lastReadMs = now;
+}
+
 Device* Store::find(uint8_t unitId) {
   for (auto& d : devices)
     if (d.enabled && d.unitId == unitId) return &d;

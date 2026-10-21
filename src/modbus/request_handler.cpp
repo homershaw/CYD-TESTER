@@ -54,8 +54,7 @@ Result read(Device& d, store::Store& s, const Settings& cfg, uint8_t fc, const u
     }
     if (lastCounted != int16_t(slot->tag)) {  // count each tag once per request
       lastCounted = int16_t(slot->tag);
-      ++tv.readCount;
-      tv.lastReadMs = now;
+      d.noteRead(slot->tag, now);
       touch(r, slot->tag);
     }
   }
